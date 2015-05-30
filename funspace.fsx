@@ -39,6 +39,7 @@ type Daemon () =
         x.init
         while not shouldExit do
             x.eval <| Console.ReadLine ()
+        x.myRunspace.Dispose ()
 
 and PSDaemonHost (program : Daemon) =
     inherit PSHost ()
