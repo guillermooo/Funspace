@@ -6,9 +6,19 @@ open System.Management.Automation
 open System.Management.Automation.Runspaces
 open System.Management.Automation.Host
 
-type Host01 () =
+type Daemon () =
     let mutable shouldExit = false
     let mutable exitCode = 0
+
+    [<DefaultValue>] val mutable me : Daemon
+    [<DefaultValue>] val mutable host : PSDaemonHost
+    [<DefaultValue>] val mutable myRunspace : Runspace
+
+    member private x.init =
+        x.me <- new Daemon ()
+        x.host <- new PSDaemonHost (x.me)
+        x.myRunspace <- RunspaceFactory.CreateRunspace (x.host)
+        x.myRunspace.Open ()
 
     member x.ShouldExit
         with get () = shouldExit
@@ -18,21 +28,22 @@ type Host01 () =
         with get () = exitCode
         and set (value) = exitCode <- value
 
-    member x.Eval script =
-        let me = new Host01 ()
-        let host = new MyHost (me)
-        use myRunspace = RunspaceFactory.CreateRunspace (host)
-        myRunspace.Open ()
+    member private x.eval script =
         use powershell = PowerShell.Create ()
-        powershell.Runspace <- myRunspace
+        powershell.Runspace <- x.myRunspace
         powershell.AddScript (script) |> ignore
         let rv = powershell.Invoke (script)
-        printfn "%A" rv
+        printfn "OUT: %A" rv
 
-and MyHost (prog : Host01) =
+    member x.RunForever =
+        x.init
+        while not shouldExit do
+            x.eval <| Console.ReadLine ()
+
+and PSDaemonHost (program : Daemon) =
     inherit PSHost ()
 
-    let program = prog
+    let program = program
     let guid = Guid.NewGuid ()
     let mutable originalCultureInfo  =
         System.Threading.Thread.CurrentThread.CurrentCulture
@@ -40,7 +51,7 @@ and MyHost (prog : Host01) =
         System.Threading.Thread.CurrentThread.CurrentUICulture
 
     override x.Name
-        with get () = "foobar"
+        with get () = "PowerShellDaemonHost"
 
     override x.Version
         with get () = Version (0, 0, 1, 0)
@@ -73,5 +84,5 @@ and MyHost (prog : Host01) =
     override x.NotifyEndApplication () =
         ()
 
-let h = Host01()
-h.Eval "[math]::Pow(2,10)"
+let psdaemon = Daemon()
+psdaemon.RunForever
